@@ -1,0 +1,72 @@
+scalar Date
+type Post {
+    id: ID!
+    title: String! 
+    characters: Int!
+    text: String
+    score: Float 
+    completed: Boolean!
+    datePublished: Date
+    author: Author!
+}
+
+type Author {
+    id: ID!
+    name: String! 
+    posts: [Post!]
+    friends: [Author]
+}
+
+input StringFilter {
+  equals: String
+  contains: String
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  lt: Int
+  lte: Int
+}
+
+input PostFilter {
+  title: StringFilter
+  characters: IntFilter
+  isComplete: Boolean
+
+  and: [PostFilter!]
+  or: [PostFilter!]
+  not: PostFilter
+}
+
+type PostAggregateResult {
+  posts: [Post!]
+  count: String
+  avgScore: Float
+}
+
+enum SortableField {
+  title
+  characters
+  datePublished
+}
+
+enum SortOrder {
+  ASC
+  DESC
+}
+
+
+input PostOrder {
+  field: SortableField
+  order: SortOrder = ASC
+}
+
+type Query {
+  getPost(postID: ID!): Post
+  getPosts(filter: PostFilter, order: PostOrder): [Post!]
+  aggregatePost(filter: PostFilter): PostAggregateResult
+}
+
+

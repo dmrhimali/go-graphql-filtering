@@ -1,0 +1,19 @@
+{
+	"ID": 1,
+	"Title": "Post 1",
+	"Characters": 5,
+	"Text": "abcde",
+	"Score": 4.5,
+	"Completed": true,
+	"DatePublished": "2023-12-31T00:00:00Z",
+	"Authors": [
+		{
+			"ID": 4,
+			"Name": "Author 4"
+		},
+		{
+			"ID": 9,
+			"Name": "Author 9"
+		}
+	]
+}

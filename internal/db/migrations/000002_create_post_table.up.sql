@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS Post(
+    ID INT NOT NULL UNIQUE AUTO_INCREMENT,
+    title VARCHAR (127) NOT NULL,
+    characters INT NOT NULL,
+    text VARCHAR (127),
+    score  FLOAT,
+    completed BOOLEAN NOT NULL DEFAULT 0,
+    datePublished DATE,
+    PRIMARY KEY (ID)
+)
