@@ -23,7 +23,6 @@ func main() {
 	defer database.CloseDB()
 	database.Migrate()
 
-	//srv := handler.NewDefaultServer(graph.NewExecutableSchema(graph.NewResolver()))
 	srv := handler.NewDefaultServer(graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{}}))
 
 	http.Handle("/", playground.Handler("GraphQL playground", "/query"))
