@@ -1,8 +1,15 @@
 package graph
 
-type Resolver struct{}
+import (
+	"fmt"
+	"math"
+	"strconv"
+	"time"
 
-/*
+	"github.com/dmrhimali/go-graphql-filtering/graph/model"
+	"golang.org/x/exp/rand"
+)
+
 type Resolver struct {
 	Authors map[string]model.Author
 	Posts   map[string]model.Post
@@ -15,7 +22,7 @@ func NewResolver() Config {
 	r.Authors = make(map[string]model.Author, nAuthors)
 	r.Posts = make(map[string]model.Post, nPosts)
 
-	rand.Seed(time.Now().UnixNano())
+	rand.Seed(uint64(time.Now().UnixNano()))
 
 	for i := 0; i < nAuthors; i++ {
 		authorId := strconv.Itoa(i + 1)
@@ -70,16 +77,16 @@ func NewResolver() Config {
 		Resolvers: &r,
 	}
 
-
+}
 
 func RandBool() bool {
-	rand.Seed(time.Now().UnixNano())
+	rand.Seed(uint64(time.Now().UnixNano()))
 	return rand.Intn(2) == 1
 }
 
 func RandIndex(nItems int) int {
 	// Seed the random number generator
-	rand.Seed(time.Now().UnixNano())
+	rand.Seed(uint64(time.Now().UnixNano()))
 	// Generate a random index within the range of the list
 	randomIndex := rand.Intn(nItems)
 	return randomIndex
@@ -88,7 +95,7 @@ func RandIndex(nItems int) int {
 // return a date of yyyy-mm-dd in string format
 func RandDate() *string {
 	// Seed the random number generator
-	rand.Seed(time.Now().UnixNano())
+	rand.Seed(uint64(time.Now().UnixNano()))
 
 	// Generate a random time between two dates
 	min := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -108,7 +115,7 @@ func RandDate() *string {
 
 func RandFloat() *float64 {
 	// Seed the random number generator
-	rand.Seed(time.Now().UnixNano())
+	rand.Seed(uint64(time.Now().UnixNano()))
 
 	// Define the range
 	min := 1.0
@@ -132,7 +139,7 @@ func fixPrecision(num float64, precision int) float64 {
 }
 
 func pickRandomIndices(length int, count int, excludeIndex int) []int {
-	rand.Seed(time.Now().UnixNano()) // Seed the random number generator
+	rand.Seed(uint64(time.Now().UnixNano())) // Seed the random number generator
 
 	if count > length {
 		count = length // Ensure we don't pick more indices than the slice has
@@ -151,4 +158,3 @@ func pickRandomIndices(length int, count int, excludeIndex int) []int {
 
 	return indices
 }
-*/

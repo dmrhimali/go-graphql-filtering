@@ -11,6 +11,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.18.1
 	github.com/jmoiron/sqlx v1.3.1
 	github.com/vektah/gqlparser/v2 v2.5.17
+	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0
 )
 
 require (
