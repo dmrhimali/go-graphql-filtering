@@ -19,14 +19,36 @@ type GetPostDest struct {
 
 	Authors []struct {
 		dbModel.Author
+
+		Friends []struct {
+			dbModel.Author
+		}
 	}
 }
 
-type GetPostsDest []GetPostDest
+type GetPostsDest []struct {
+	dbModel.Post
+
+	Authors []struct {
+		dbModel.Author
+
+		Friends []struct {
+			dbModel.Author
+		}
+	}
+}
 
 type GetPostAggregateDest struct {
 	Posts []struct {
-		*GetPostDest
+		dbModel.Post
+
+		Authors []struct {
+			dbModel.Author
+
+			Friends []struct {
+				dbModel.Author
+			}
+		}
 	}
 
 	Count int32
@@ -34,6 +56,63 @@ type GetPostAggregateDest struct {
 	AvgScore float32
 }
 
+//SQL query to us
+// SELECT friends.*
+// from Author friends
+// inner join Author_Friend_Author afa on afa.friend_author_id = friends.ID
+// inner join Author author on author.ID=afa.author_id
+// where author.ID =1
+// UNION
+// SELECT friends.*
+// from Author friends
+// inner join Author_Friend_Author afa on afa.author_id = friends.ID
+// inner join Author author on author.ID=afa.friend_author_id
+// where author.ID =1
+//output:
+//|ID|name|
+// |--|----|
+// |2|Author 2|
+// |3|Author 3|
+// |4|Author 4|
+// |10|Author 10|
+
+// debug sql: generates correct results. but not this program. i ssuem it is GetPostDest structure. Did not fix it here.
+// SELECT `Post`.`ID` AS "Post.ID",
+//
+//	`Post`.title AS "Post.title",
+//	`Post`.characters AS "Post.characters",
+//	`Post`.completed AS "Post.completed",
+//	`Post`.`datePublished` AS "Post.datePublished",
+//	`Post`.score AS "Post.score",
+//	`Post`.text AS "Post.text",
+//	`Author`.`ID` AS "Author.ID",
+//	`Author`.name AS "Author.name",
+//	friends.`Friend.ID` AS "Friend.ID",
+//	friends.`Friend.name` AS "Friend.name"
+//
+// FROM posts.`Post`
+//
+//	INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+//	INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+//	INNER JOIN (
+//	     (
+//	          SELECT `Friend`.`ID` AS "Friend.ID",
+//	               `Friend`.name AS "Friend.name"
+//	          FROM posts.`Author` AS `Friend`
+//	               INNER JOIN posts.`Author_Friend_Author` ON (`Author_Friend_Author`.friend_author_id = `Friend`.`ID`)
+//	               INNER JOIN posts.`Author` ON (`Author_Friend_Author`.author_id = `Author`.`ID`)
+//	     )
+//	     UNION
+//	     (
+//	          SELECT `Friend`.`ID` AS "Friend.ID",
+//	               `Friend`.name AS "Friend.name"
+//	          FROM posts.`Author` AS `Friend`
+//	               INNER JOIN posts.`Author_Friend_Author` ON (`Author_Friend_Author`.author_id = `Friend`.`ID`)
+//	               INNER JOIN posts.`Author` ON (`Author_Friend_Author`.friend_author_id = `Author`.`ID`)
+//	     )
+//	) AS friends ON (`Friend.ID` = `Author`.`ID`)
+//
+// WHERE `Post`.`ID` = 1;
 func GetPost(postID string) (*graphModel.Post, error) {
 	//get postId as int64
 	postIdVal, err := strconv.ParseInt(postID, 10, 64)
@@ -42,6 +121,31 @@ func GetPost(postID string) (*graphModel.Post, error) {
 	}
 
 	//query
+	FRIEND := dbTable.Author.AS("Friend")
+
+	friendsSubQuery :=
+		jetMysql.SELECT(
+			dbTable.Author.ID.AS("Author.ID"),
+			FRIEND.ID.AS("Friend.ID"),
+			FRIEND.Name.AS("Friend.name"),
+		).FROM(FRIEND.
+			INNER_JOIN(dbTable.AuthorFriendAuthor, dbTable.AuthorFriendAuthor.FriendAuthorID.EQ(FRIEND.ID)).
+			INNER_JOIN(dbTable.Author, dbTable.AuthorFriendAuthor.AuthorID.EQ(dbTable.Author.ID)),
+		).UNION(
+			jetMysql.SELECT(
+				dbTable.Author.ID, FRIEND.AllColumns,
+			).FROM(FRIEND.
+				INNER_JOIN(dbTable.AuthorFriendAuthor, dbTable.AuthorFriendAuthor.AuthorID.EQ(FRIEND.ID)).
+				INNER_JOIN(dbTable.Author, dbTable.AuthorFriendAuthor.FriendAuthorID.EQ(dbTable.Author.ID)),
+			),
+		).AsTable("friends")
+
+	//https://github.com/go-jet/jet/wiki/Subquery
+	//select columns from friendsSubQuery to use in main
+	authorId := dbTable.Author.ID.From(friendsSubQuery)
+	friendId := jetMysql.IntegerColumn("Friend.ID").From(friendsSubQuery)
+	friendName := jetMysql.StringColumn("Friend.name").From(friendsSubQuery)
+
 	var projectionList jetMysql.ProjectionList
 	projectionList = append(projectionList, dbTable.Post.ID)
 	projectionList = append(projectionList, dbTable.Post.Title)
@@ -51,33 +155,23 @@ func GetPost(postID string) (*graphModel.Post, error) {
 	projectionList = append(projectionList, dbTable.Post.Score)
 	projectionList = append(projectionList, dbTable.Post.Text)
 	projectionList = append(projectionList, dbTable.Author.AllColumns)
+	projectionList = append(projectionList, friendId)
+	projectionList = append(projectionList, friendName)
+
 	query :=
 		jetMysql.
 			SELECT(projectionList).
 			FROM(
 				dbTable.Post.
 					INNER_JOIN(dbTable.AuthorPost, dbTable.Post.ID.EQ(dbTable.AuthorPost.PostID)).
-					INNER_JOIN(dbTable.Author, dbTable.Author.ID.EQ(dbTable.AuthorPost.AuthorID)),
+					INNER_JOIN(dbTable.Author, dbTable.Author.ID.EQ(dbTable.AuthorPost.AuthorID)).
+					INNER_JOIN(friendsSubQuery, authorId.EQ(dbTable.Author.ID)),
 			).
 			WHERE(
 				dbTable.Post.ID.EQ(jetMysql.Int(postIdVal)),
 			)
 
 	printStatementInfo(query)
-	//output:
-	// SELECT `Post`.`ID` AS "Post.ID",
-	//  `Post`.title AS "Post.title",
-	//  `Post`.characters AS "Post.characters",
-	//  `Post`.completed AS "Post.completed",
-	//  `Post`.`datePublished` AS "Post.datePublished",
-	//  `Post`.score AS "Post.score",
-	//  `Post`.text AS "Post.text",
-	//  `Author`.`ID` AS "Author.ID",
-	//  `Author`.name AS "Author.name"
-	// FROM posts.`Post`
-	// 	INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-	// 	INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-	// WHERE `Post`.`ID` = 1;
 
 	//Store result into desired destination:
 	var dest GetPostDest
@@ -92,11 +186,28 @@ func GetPost(postID string) (*graphModel.Post, error) {
 	datePub := dest.DatePublished.Format("2006-01-02")
 	id := strconv.FormatInt(int64(dest.ID), 10)
 
-	var firstAuthor *graphModel.Author
+	var authors []*graphModel.Author
 	if len(dest.Authors) > 0 {
-		firstAuthor = &graphModel.Author{
-			ID:   strconv.FormatInt(int64(dest.Authors[0].ID), 10),
-			Name: dest.Authors[0].Name,
+		for _, authorVal := range dest.Authors {
+
+			//get friends
+			var friends []*model.Author
+			for _, friendVal := range authorVal.Friends {
+				friendId := strconv.Itoa(int(friendVal.ID))
+				friendAuthor := &graphModel.Author{
+					ID:   friendId,
+					Name: friendVal.Name,
+				}
+				friends = append(friends, friendAuthor)
+			}
+
+			author := &graphModel.Author{
+				ID:      strconv.FormatInt(int64(authorVal.ID), 10),
+				Name:    authorVal.Name,
+				Friends: friends,
+			}
+			authors = append(authors, author)
+
 		}
 	}
 
@@ -108,38 +219,38 @@ func GetPost(postID string) (*graphModel.Post, error) {
 		Score:         dest.Score,
 		Completed:     dest.Completed,
 		DatePublished: &datePub,
-		Author:        firstAuthor,
+		Authors:       authors,
 	}
 	return resultPost, nil
 }
 
-/**
-if we had author-friend-author table:
-SELECT
-post.ID AS postId,
-post.Title as postTitle,
-author.ID as authorId ,
-author.name AS authorName,
-friend.ID AS friendID,
-friend.name	AS FriendName
-FROM posts.Post post
-JOIN posts.Author_Post ap ON post.ID = ap.post_id
-JOIN posts.Author author ON ap.author_id =author.ID
-JOIN posts.Author_Friend_Author afa  ON afa.author_id = author.ID
-JOIN posts.Author friend ON afa.friend_author_id = friend.ID
-ORDER BY post.ID, author.ID, friend.ID
-
-
-SELECT friends.*
-FROM user AS friends
-JOIN user_has_friends ON friends.id = user_has_friends.friend_id
-WHERE user_has_friends.user_id = *ID HERE*
-
-https://stackoverflow.com/questions/51934029/querying-friends-for-a-user-based-on-self-referencing-table
-https://stackoverflow.com/questions/5291116/selecting-with-two-references-to-same-table
-**/
-
 func GetPosts(filter *graphModel.PostFilter, order *graphModel.PostOrder) ([]*model.Post, error) {
+	//see https://github.com/go-jet/jet/wiki/SELECT#table-aliasing if you have relation in the same table like author-firend-author, manager-employee to write sql
+
+	var orderByClause jetMysql.OrderByClause
+	var whereClauseSqlExpression jetMysql.BoolExpression
+	var err error
+
+	//https://github.com/go-jet/jet/wiki/Subquery
+	FRIEND := dbTable.Author.AS("Friend")
+
+	friendsSubQuery :=
+		jetMysql.SELECT(
+			dbTable.Author.ID, FRIEND.AllColumns,
+		).FROM(FRIEND.
+			INNER_JOIN(dbTable.AuthorFriendAuthor, dbTable.AuthorFriendAuthor.FriendAuthorID.EQ(FRIEND.ID)).
+			INNER_JOIN(dbTable.Author, dbTable.AuthorFriendAuthor.AuthorID.EQ(dbTable.Author.ID)),
+		).UNION(
+			jetMysql.SELECT(
+				dbTable.Author.ID, FRIEND.AllColumns,
+			).FROM(FRIEND.
+				INNER_JOIN(dbTable.AuthorFriendAuthor, dbTable.AuthorFriendAuthor.AuthorID.EQ(FRIEND.ID)).
+				INNER_JOIN(dbTable.Author, dbTable.AuthorFriendAuthor.FriendAuthorID.EQ(dbTable.Author.ID)),
+			),
+		).AsTable("friends")
+
+	authorId := dbTable.Author.ID.From(friendsSubQuery)
+
 	//get fields to return
 	var projectionList jetMysql.ProjectionList
 	projectionList = append(projectionList, dbTable.Post.ID)
@@ -150,20 +261,56 @@ func GetPosts(filter *graphModel.PostFilter, order *graphModel.PostOrder) ([]*mo
 	projectionList = append(projectionList, dbTable.Post.Score)
 	projectionList = append(projectionList, dbTable.Post.Text)
 	projectionList = append(projectionList, dbTable.Author.AllColumns)
-	//see https://github.com/go-jet/jet/wiki/SELECT#table-aliasing if you have relation in the same table like author-firend-author, manager-employee to write sql
-
-	var orderByClause jetMysql.OrderByClause
-	var whereClauseSqlExpression jetMysql.BoolExpression
-	var err error
+	projectionList = append(projectionList, friendsSubQuery.AllColumns())
 
 	query :=
-		jetMysql.SELECT(
-			projectionList,
-		).FROM(
-			dbTable.Post.
-				INNER_JOIN(dbTable.AuthorPost, dbTable.Post.ID.EQ(dbTable.AuthorPost.PostID)).
-				INNER_JOIN(dbTable.Author, dbTable.Author.ID.EQ(dbTable.AuthorPost.AuthorID)),
-		)
+		jetMysql.
+			SELECT(projectionList).
+			FROM(
+				dbTable.Post.
+					INNER_JOIN(dbTable.AuthorPost, dbTable.Post.ID.EQ(dbTable.AuthorPost.PostID)).
+					INNER_JOIN(dbTable.Author, dbTable.Author.ID.EQ(dbTable.AuthorPost.AuthorID)).
+					INNER_JOIN(friendsSubQuery, authorId.EQ(dbTable.Author.ID)),
+			)
+
+	printStatementInfo(query)
+	//	Debug sql: This provides correct results in dbeaver, not here though
+	//
+	// 	SELECT `Post`.`ID` AS "Post.ID",
+	// 	`Post`.title AS "Post.title",
+	// 	`Post`.characters AS "Post.characters",
+	// 	`Post`.completed AS "Post.completed",
+	// 	`Post`.`datePublished` AS "Post.datePublished",
+	// 	`Post`.score AS "Post.score",
+	// 	`Post`.text AS "Post.text",
+	// 	`Author`.`ID` AS "Author.ID",
+	// 	`Author`.name AS "Author.name",
+	// 	friends.`Author.ID` AS "Author.ID",
+	// 	friends.`Friend.ID` AS "Friend.ID",
+	// 	friends.`Friend.name` AS "Friend.name"
+	// FROM posts.`Post`
+	// 	INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+	// 	INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	// 	INNER JOIN (
+	// 		 (
+	// 			  SELECT `Author`.`ID` AS "Author.ID",
+	// 				   `Friend`.`ID` AS "Friend.ID",
+	// 				   `Friend`.name AS "Friend.name"
+	// 			  FROM posts.`Author` AS `Friend`
+	// 				   INNER JOIN posts.`Author_Friend_Author` ON (`Author_Friend_Author`.friend_author_id = `Friend`.`ID`)
+	// 				   INNER JOIN posts.`Author` ON (`Author_Friend_Author`.author_id = `Author`.`ID`)
+	// 		 )
+	// 		 UNION
+	// 		 (
+	// 			  SELECT `Author`.`ID` AS "Author.ID",
+	// 				   `Friend`.`ID` AS "Friend.ID",
+	// 				   `Friend`.name AS "Friend.name"
+	// 			  FROM posts.`Author` AS `Friend`
+	// 				   INNER JOIN posts.`Author_Friend_Author` ON (`Author_Friend_Author`.author_id = `Friend`.`ID`)
+	// 				   INNER JOIN posts.`Author` ON (`Author_Friend_Author`.friend_author_id = `Author`.`ID`)
+	// 		 )
+	// 	) AS friends ON (friends.`Author.ID` = `Author`.`ID`)
+	// WHERE `Post`.`ID` = 1;
 
 	//get filtered query expression
 	if filter != nil {
@@ -209,11 +356,16 @@ func GetPosts(filter *graphModel.PostFilter, order *graphModel.PostOrder) ([]*mo
 		datePub := post.DatePublished.Format("2006-01-02")
 		id := strconv.FormatInt(int64(post.ID), 10)
 
-		var firstAuthor *graphModel.Author
+		var authors []*graphModel.Author
 		if len(post.Authors) > 0 {
-			firstAuthor = &graphModel.Author{
-				ID:   strconv.FormatInt(int64(post.Authors[0].ID), 10),
-				Name: post.Authors[0].Name,
+			if len(post.Authors) > 0 {
+				for _, val := range post.Authors {
+					author := &graphModel.Author{
+						ID:   strconv.FormatInt(int64(val.ID), 10),
+						Name: val.Name,
+					}
+					authors = append(authors, author)
+				}
 			}
 		}
 		resultPosts = append(resultPosts, &model.Post{
@@ -224,7 +376,7 @@ func GetPosts(filter *graphModel.PostFilter, order *graphModel.PostOrder) ([]*mo
 			Score:         post.Score,
 			Completed:     post.Completed,
 			DatePublished: &datePub,
-			Author:        firstAuthor,
+			Authors:       authors,
 		})
 	}
 
@@ -265,7 +417,7 @@ func GetOrderByClause(postOrder graphModel.PostOrder) (jetMysql.OrderByClause, e
 		}
 		return orderByClause, nil
 	} else {
-		return nil, fmt.Errorf("Unsupported sort field")
+		return nil, fmt.Errorf("unsupported sort field")
 	}
 }
 

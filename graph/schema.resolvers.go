@@ -19,7 +19,6 @@ func (r *queryResolver) GetPost(ctx context.Context, postID string) (*model.Post
 		return nil, err
 	}
 	return resultPost, nil
-
 }
 
 // GetPosts is the resolver for the getPosts field.

@@ -7,7 +7,7 @@ type Post {
     score: Float 
     completed: Boolean!
     datePublished: Date
-    author: Author!
+    authors: [Author!]
 }
 
 type Author {

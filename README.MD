@@ -126,10 +126,10 @@ type Post {
     score: Float 
     completed: Boolean!
     datePublished: Date
-    author: Author!
+    authors: [Author!]
 }
 
-type Author {
+type authors {
     id: ID!
     name: String! 
     posts: [Post!]
@@ -233,7 +233,7 @@ We need to create migrations for our app so every time our app runs it creates t
 
 `internal/db/migrations`
 
-we will create `author`, `post` and `author_post` tables. post has m:n relationship with author.
+we will create `author`, `post` `author_friend_author` and `author_post` tables. post has m:n relationship with author. author has a self reference m:n relation with other friend authors
 
 create folowing migration files. order of execution is reflected in prefixed number in file and thus table creation should be from independent to dependent tables order.
 
@@ -250,6 +250,7 @@ cd internal/pkg/db/migrations/
 $ ~/go/bin/migrate create -ext sql  -seq create_author_table
 $ ~/go/bin/migrate create -ext sql  -seq create_post_table
 $ ~/go/bin/migrate create -ext sql  -seq create_author_post_table
+$ ~/go/bin/migrate create -ext sql  -seq create_author_friend_author_table
 ```
 
 Each table has up(create) and down(drop/reverse) scripts. Fill in scripts as follows:
@@ -287,7 +288,7 @@ CREATE TABLE IF NOT EXISTS Post(
 DROP TABLE IF EXISTS Post;
 ```
  
-**internal/db/migrations/000004_create_author_post_table.up.sql:**
+**internal/db/migrations/000003_create_author_post_table.up.sql:**
 ```sql
 CREATE TABLE IF NOT EXISTS Author_Post(
     author_id INT NOT NULL,
@@ -298,9 +299,24 @@ CREATE TABLE IF NOT EXISTS Author_Post(
 )
 ```
 
-**internal/db/migrations/000004_create_author_post_table.down.sql:**
+**internal/db/migrations/000003_create_author_post_table.down.sql:**
 ```sql
 DROP TABLE IF EXISTS Author_Post;
+```
+
+
+**internal/db/migrations/000004_create_author_friend_author_table.up.sql:**
+```sql
+CREATE TABLE IF NOT EXISTS Author_Friend_Author(
+    author_id INT REFERENCES Author(ID),
+    friend_author_id INT REFERENCES Author(ID),
+    PRIMARY KEY (author_id, friend_author_id)
+)
+```
+
+**internal/db/migrations/000004_create_author_friend_author_table.down.sql:**
+```sql
+DROP TABLE IF EXISTS Author_Friend_Author;
 ```
 
 Install **go mysql driver** and **golang-migrate** packages then create migrations:
@@ -398,7 +414,7 @@ now you can run migrations like this:
 
 migrate up: `make migrate_up`
 migrate down: `make migrate down`
-create empty migration files: `make create_migration`
+create empty migration files: `make create_migration ARG=create_post_table`
 
 
 wirte code to intializedb , migrate tables and close db.
@@ -488,6 +504,11 @@ $ make create_migration  ARG="insert_author_post_table"
 /Users/Rasanjalee/code/go-graphql-filtering/internal/db/migrations/000007_insert_author_post_table.up.sql
 /Users/Rasanjalee/code/go-graphql-filtering/internal/db/migrations/000007_insert_author_post_table.down.sql
 
+$ make create_migration  ARG="insert_author_friend_author_table"
+~/go/bin/migrate        create   -dir internal/db/migrations    -ext sql        -seq insert_author_post_table
+/Users/Rasanjalee/code/go-graphql-filtering/internal/db/migrations/000008_insert_author_post_table.up.sql
+/Users/Rasanjalee/code/go-graphql-filtering/internal/db/migrations/000008_insert_author_post_table.down.sql
+
 ```
 
 add following:
@@ -558,6 +579,31 @@ VALUES
 DELETE FROM Author_Post;
 ```
 
+**internal/db/migrations/000008_insert_author_friend_author_table.up.sql:**
+```sql
+INSERT INTO Author_Friend_Author
+(author_id, friend_author_id)
+VALUES
+(1, 2),
+(1, 3),
+(4, 1),
+(3, 4),
+(4, 5),
+(5, 6),
+(5, 7),
+(6, 7),
+(7, 8),
+(8, 9),
+(9, 10),
+(10, 1),
+(10, 3);
+```
+
+**internal/db/migrations/000008_insert_author_friend_author_table.down.sql**
+```sql
+DELETE FROM Author_Friend_Author;
+```
+
 
 ```sql
 mysql> select * from Author;
@@ -613,6 +659,26 @@ mysql> select * from Author_Post;
 |        10 |      10 |
 +-----------+---------+
 13 rows in set (0.00 sec)
+
+mysql> select * from Author_Friend_Author;
++-----------+------------------+
+| author_id | friend_author_id |
++-----------+------------------+
+|         4 |                1 |
+|        10 |                1 |
+|         1 |                2 |
+|         1 |                3 |
+|        10 |                3 |
+|         3 |                4 |
+|         4 |                5 |
+|         5 |                6 |
+|         5 |                7 |
+|         6 |                7 |
+|         7 |                8 |
+|         8 |                9 |
+|         9 |               10 |
++-----------+------------------+
+13 rows in set (0.01 sec)
 ```
 
 ## Select query generation method
@@ -1001,14 +1067,36 @@ type GetPostDest struct {
 
 	Authors []struct {
 		dbModel.Author
+
+		Friends []struct {
+			dbModel.Author
+		}
 	}
 }
 
-type GetPostsDest []GetPostDest
+type GetPostsDest []struct {
+	dbModel.Post
+
+	Authors []struct {
+		dbModel.Author
+
+		Friends []struct {
+			dbModel.Author
+		}
+	}
+}
 
 type GetPostAggregateDest struct {
 	Posts []struct {
-		*GetPostDest
+		dbModel.Post
+
+		Authors []struct {
+			dbModel.Author
+
+			Friends []struct {
+				dbModel.Author
+			}
+		}
 	}
 
 	Count int32
@@ -1016,6 +1104,63 @@ type GetPostAggregateDest struct {
 	AvgScore float32
 }
 
+//SQL query to us
+// SELECT friends.*
+// from Author friends
+// inner join Author_Friend_Author afa on afa.friend_author_id = friends.ID
+// inner join Author author on author.ID=afa.author_id
+// where author.ID =1
+// UNION
+// SELECT friends.*
+// from Author friends
+// inner join Author_Friend_Author afa on afa.author_id = friends.ID
+// inner join Author author on author.ID=afa.friend_author_id
+// where author.ID =1
+//output:
+//|ID|name|
+// |--|----|
+// |2|Author 2|
+// |3|Author 3|
+// |4|Author 4|
+// |10|Author 10|
+
+// debug sql
+// SELECT `Post`.`ID` AS "Post.ID",
+//
+//	`Post`.title AS "Post.title",
+//	`Post`.characters AS "Post.characters",
+//	`Post`.completed AS "Post.completed",
+//	`Post`.`datePublished` AS "Post.datePublished",
+//	`Post`.score AS "Post.score",
+//	`Post`.text AS "Post.text",
+//	`Author`.`ID` AS "Author.ID",
+//	`Author`.name AS "Author.name",
+//	friends.`Friend.ID` AS "Friend.ID",
+//	friends.`Friend.name` AS "Friend.name"
+//
+// FROM posts.`Post`
+//
+//	INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+//	INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+//	INNER JOIN (
+//	     (
+//	          SELECT `Friend`.`ID` AS "Friend.ID",
+//	               `Friend`.name AS "Friend.name"
+//	          FROM posts.`Author` AS `Friend`
+//	               INNER JOIN posts.`Author_Friend_Author` ON (`Author_Friend_Author`.friend_author_id = `Friend`.`ID`)
+//	               INNER JOIN posts.`Author` ON (`Author_Friend_Author`.author_id = `Author`.`ID`)
+//	     )
+//	     UNION
+//	     (
+//	          SELECT `Friend`.`ID` AS "Friend.ID",
+//	               `Friend`.name AS "Friend.name"
+//	          FROM posts.`Author` AS `Friend`
+//	               INNER JOIN posts.`Author_Friend_Author` ON (`Author_Friend_Author`.author_id = `Friend`.`ID`)
+//	               INNER JOIN posts.`Author` ON (`Author_Friend_Author`.friend_author_id = `Author`.`ID`)
+//	     )
+//	) AS friends ON (`Friend.ID` = `Author`.`ID`)
+//
+// WHERE `Post`.`ID` = 1;
 func GetPost(postID string) (*graphModel.Post, error) {
 	//get postId as int64
 	postIdVal, err := strconv.ParseInt(postID, 10, 64)
@@ -1024,6 +1169,31 @@ func GetPost(postID string) (*graphModel.Post, error) {
 	}
 
 	//query
+	FRIEND := dbTable.Author.AS("Friend")
+
+	friendsSubQuery :=
+		jetMysql.SELECT(
+			dbTable.Author.ID.AS("Author.ID"),
+			FRIEND.ID.AS("Friend.ID"),
+			FRIEND.Name.AS("Friend.name"),
+		).FROM(FRIEND.
+			INNER_JOIN(dbTable.AuthorFriendAuthor, dbTable.AuthorFriendAuthor.FriendAuthorID.EQ(FRIEND.ID)).
+			INNER_JOIN(dbTable.Author, dbTable.AuthorFriendAuthor.AuthorID.EQ(dbTable.Author.ID)),
+		).UNION(
+			jetMysql.SELECT(
+				dbTable.Author.ID, FRIEND.AllColumns,
+			).FROM(FRIEND.
+				INNER_JOIN(dbTable.AuthorFriendAuthor, dbTable.AuthorFriendAuthor.AuthorID.EQ(FRIEND.ID)).
+				INNER_JOIN(dbTable.Author, dbTable.AuthorFriendAuthor.FriendAuthorID.EQ(dbTable.Author.ID)),
+			),
+		).AsTable("friends")
+
+	//https://github.com/go-jet/jet/wiki/Subquery
+	//select columns from friendsSubQuery to use in main
+	authorId := dbTable.Author.ID.From(friendsSubQuery)
+	friendId := jetMysql.IntegerColumn("Friend.ID").From(friendsSubQuery)
+	friendName := jetMysql.StringColumn("Friend.name").From(friendsSubQuery)
+
 	var projectionList jetMysql.ProjectionList
 	projectionList = append(projectionList, dbTable.Post.ID)
 	projectionList = append(projectionList, dbTable.Post.Title)
@@ -1033,35 +1203,23 @@ func GetPost(postID string) (*graphModel.Post, error) {
 	projectionList = append(projectionList, dbTable.Post.Score)
 	projectionList = append(projectionList, dbTable.Post.Text)
 	projectionList = append(projectionList, dbTable.Author.AllColumns)
+	projectionList = append(projectionList, friendId)
+	projectionList = append(projectionList, friendName)
+
 	query :=
 		jetMysql.
 			SELECT(projectionList).
 			FROM(
 				dbTable.Post.
 					INNER_JOIN(dbTable.AuthorPost, dbTable.Post.ID.EQ(dbTable.AuthorPost.PostID)).
-					INNER_JOIN(dbTable.Author, dbTable.Author.ID.EQ(dbTable.AuthorPost.AuthorID)),
+					INNER_JOIN(dbTable.Author, dbTable.Author.ID.EQ(dbTable.AuthorPost.AuthorID)).
+					INNER_JOIN(friendsSubQuery, authorId.EQ(dbTable.Author.ID)),
 			).
 			WHERE(
 				dbTable.Post.ID.EQ(jetMysql.Int(postIdVal)),
 			)
 
 	printStatementInfo(query)
-    // Debug sql: 
-    // ==============================
-    // SELECT `Post`.`ID` AS "Post.ID",
-    //     `Post`.title AS "Post.title",
-    //     `Post`.characters AS "Post.characters",
-    //     `Post`.completed AS "Post.completed",
-    //     `Post`.`datePublished` AS "Post.datePublished",
-    //     `Post`.score AS "Post.score",
-    //     `Post`.text AS "Post.text",
-    //     `Author`.`ID` AS "Author.ID",
-    //     `Author`.name AS "Author.name"
-    // FROM posts.`Post`
-    //     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-    //     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-    // WHERE `Post`.`ID` = 1;
-
 
 	//Store result into desired destination:
 	var dest GetPostDest
@@ -1076,11 +1234,28 @@ func GetPost(postID string) (*graphModel.Post, error) {
 	datePub := dest.DatePublished.Format("2006-01-02")
 	id := strconv.FormatInt(int64(dest.ID), 10)
 
-	var firstAuthor *graphModel.Author
+	var authors []*graphModel.Author
 	if len(dest.Authors) > 0 {
-		firstAuthor = &graphModel.Author{
-			ID:   strconv.FormatInt(int64(dest.Authors[0].ID), 10),
-			Name: dest.Authors[0].Name,
+		for _, authorVal := range dest.Authors {
+
+			//get friends
+			var friends []*model.Author
+			for _, friendVal := range authorVal.Friends {
+				friendId := strconv.Itoa(int(friendVal.ID))
+				friendAuthor := &graphModel.Author{
+					ID:   friendId,
+					Name: friendVal.Name,
+				}
+				friends = append(friends, friendAuthor)
+			}
+
+			author := &graphModel.Author{
+				ID:      strconv.FormatInt(int64(authorVal.ID), 10),
+				Name:    authorVal.Name,
+				Friends: friends,
+			}
+			authors = append(authors, author)
+
 		}
 	}
 
@@ -1092,12 +1267,38 @@ func GetPost(postID string) (*graphModel.Post, error) {
 		Score:         dest.Score,
 		Completed:     dest.Completed,
 		DatePublished: &datePub,
-		Author:        firstAuthor,
+		Authors:       authors,
 	}
 	return resultPost, nil
 }
 
 func GetPosts(filter *graphModel.PostFilter, order *graphModel.PostOrder) ([]*model.Post, error) {
+	//see https://github.com/go-jet/jet/wiki/SELECT#table-aliasing if you have relation in the same table like author-firend-author, manager-employee to write sql
+
+	var orderByClause jetMysql.OrderByClause
+	var whereClauseSqlExpression jetMysql.BoolExpression
+	var err error
+
+	//https://github.com/go-jet/jet/wiki/Subquery
+	FRIEND := dbTable.Author.AS("Friend")
+
+	friendsSubQuery :=
+		jetMysql.SELECT(
+			dbTable.Author.ID, FRIEND.AllColumns,
+		).FROM(FRIEND.
+			INNER_JOIN(dbTable.AuthorFriendAuthor, dbTable.AuthorFriendAuthor.FriendAuthorID.EQ(FRIEND.ID)).
+			INNER_JOIN(dbTable.Author, dbTable.AuthorFriendAuthor.AuthorID.EQ(dbTable.Author.ID)),
+		).UNION(
+			jetMysql.SELECT(
+				dbTable.Author.ID, FRIEND.AllColumns,
+			).FROM(FRIEND.
+				INNER_JOIN(dbTable.AuthorFriendAuthor, dbTable.AuthorFriendAuthor.AuthorID.EQ(FRIEND.ID)).
+				INNER_JOIN(dbTable.Author, dbTable.AuthorFriendAuthor.FriendAuthorID.EQ(dbTable.Author.ID)),
+			),
+		).AsTable("friends")
+
+	authorId := dbTable.Author.ID.From(friendsSubQuery)
+
 	//get fields to return
 	var projectionList jetMysql.ProjectionList
 	projectionList = append(projectionList, dbTable.Post.ID)
@@ -1108,24 +1309,61 @@ func GetPosts(filter *graphModel.PostFilter, order *graphModel.PostOrder) ([]*mo
 	projectionList = append(projectionList, dbTable.Post.Score)
 	projectionList = append(projectionList, dbTable.Post.Text)
 	projectionList = append(projectionList, dbTable.Author.AllColumns)
-	//see https://github.com/go-jet/jet/wiki/SELECT#table-aliasing if you have relation in the same table like author-firend-author, manager-employee to write sql
-
-	var orderByClause jetMysql.OrderByClause
-	var whereClauseSqlExpression jetMysql.BoolExpression
-	var err error
+	projectionList = append(projectionList, friendsSubQuery.AllColumns())
 
 	query :=
-		jetMysql.SELECT(
-			projectionList,
-		).FROM(
-			dbTable.Post.
-				INNER_JOIN(dbTable.AuthorPost, dbTable.Post.ID.EQ(dbTable.AuthorPost.PostID)).
-				INNER_JOIN(dbTable.Author, dbTable.Author.ID.EQ(dbTable.AuthorPost.AuthorID)),
-		)
+		jetMysql.
+			SELECT(projectionList).
+			FROM(
+				dbTable.Post.
+					INNER_JOIN(dbTable.AuthorPost, dbTable.Post.ID.EQ(dbTable.AuthorPost.PostID)).
+					INNER_JOIN(dbTable.Author, dbTable.Author.ID.EQ(dbTable.AuthorPost.AuthorID)).
+					INNER_JOIN(friendsSubQuery, authorId.EQ(dbTable.Author.ID)),
+			)
+
+	printStatementInfo(query)
+	//	Debug sql: This provides correct results in dbeaver, not here though
+	//
+	// 	SELECT `Post`.`ID` AS "Post.ID",
+	// 	`Post`.title AS "Post.title",
+	// 	`Post`.characters AS "Post.characters",
+	// 	`Post`.completed AS "Post.completed",
+	// 	`Post`.`datePublished` AS "Post.datePublished",
+	// 	`Post`.score AS "Post.score",
+	// 	`Post`.text AS "Post.text",
+	// 	`Author`.`ID` AS "Author.ID",
+	// 	`Author`.name AS "Author.name",
+	// 	friends.`Author.ID` AS "Author.ID",
+	// 	friends.`Friend.ID` AS "Friend.ID",
+	// 	friends.`Friend.name` AS "Friend.name"
+	// FROM posts.`Post`
+	// 	INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+	// 	INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	// 	INNER JOIN (
+	// 		 (
+	// 			  SELECT `Author`.`ID` AS "Author.ID",
+	// 				   `Friend`.`ID` AS "Friend.ID",
+	// 				   `Friend`.name AS "Friend.name"
+	// 			  FROM posts.`Author` AS `Friend`
+	// 				   INNER JOIN posts.`Author_Friend_Author` ON (`Author_Friend_Author`.friend_author_id = `Friend`.`ID`)
+	// 				   INNER JOIN posts.`Author` ON (`Author_Friend_Author`.author_id = `Author`.`ID`)
+	// 		 )
+	// 		 UNION
+	// 		 (
+	// 			  SELECT `Author`.`ID` AS "Author.ID",
+	// 				   `Friend`.`ID` AS "Friend.ID",
+	// 				   `Friend`.name AS "Friend.name"
+	// 			  FROM posts.`Author` AS `Friend`
+	// 				   INNER JOIN posts.`Author_Friend_Author` ON (`Author_Friend_Author`.author_id = `Friend`.`ID`)
+	// 				   INNER JOIN posts.`Author` ON (`Author_Friend_Author`.friend_author_id = `Author`.`ID`)
+	// 		 )
+	// 	) AS friends ON (friends.`Author.ID` = `Author`.`ID`)
+	// WHERE `Post`.`ID` = 1;
 
 	//get filtered query expression
 	if filter != nil {
 		whereClauseSqlExpression, err = GetFilterWhereExpression(filter)
+		//println("whereClauseSqlExpression=", whereClauseSqlExpression)
 		if err != nil {
 			return nil, err
 		}
@@ -1166,11 +1404,16 @@ func GetPosts(filter *graphModel.PostFilter, order *graphModel.PostOrder) ([]*mo
 		datePub := post.DatePublished.Format("2006-01-02")
 		id := strconv.FormatInt(int64(post.ID), 10)
 
-		var firstAuthor *graphModel.Author
+		var authors []*graphModel.Author
 		if len(post.Authors) > 0 {
-			firstAuthor = &graphModel.Author{
-				ID:   strconv.FormatInt(int64(post.Authors[0].ID), 10),
-				Name: post.Authors[0].Name,
+			if len(post.Authors) > 0 {
+				for _, val := range post.Authors {
+					author := &graphModel.Author{
+						ID:   strconv.FormatInt(int64(val.ID), 10),
+						Name: val.Name,
+					}
+					authors = append(authors, author)
+				}
 			}
 		}
 		resultPosts = append(resultPosts, &model.Post{
@@ -1181,7 +1424,7 @@ func GetPosts(filter *graphModel.PostFilter, order *graphModel.PostOrder) ([]*mo
 			Score:         post.Score,
 			Completed:     post.Completed,
 			DatePublished: &datePub,
-			Author:        firstAuthor,
+			Authors:       authors,
 		})
 	}
 
@@ -1222,7 +1465,7 @@ func GetOrderByClause(postOrder graphModel.PostOrder) (jetMysql.OrderByClause, e
 		}
 		return orderByClause, nil
 	} else {
-		return nil, fmt.Errorf("Unsupported sort field")
+		return nil, fmt.Errorf("unsupported sort field")
 	}
 }
 
@@ -1499,1153 +1742,1028 @@ func printJson(title string, v interface{}) {
 }
 ```
 
-### Runserver
-
-`go run server.go`
-
-### issue queries 
-
-in insomnia, post following queries to endpoint `http://localhost:8080/query`
-
-I have exported all queries in `gql-queries-insomnia.json`. Simply import it to insomnia to try (settings> preferences> data tab> import)
-
-### get post by id
-
-query:
-
-```gql
-query {
-  getPost ( postID: "1") {
-		id
-		title
-		datePublished
-		characters
-		completed
-		score
-		text
-		author {
-			id
-			name
-			friends{
-				id
-				name
-			}
-		}
-		
-	}
-}
-```
-
-response:
-```json
-{
-	"data": {
-		"getPost": {
-			"id": "1",
-			"title": "Post 1",
-			"datePublished": "2023-12-31",
-			"characters": 5,
-			"completed": true,
-			"score": 4.5,
-			"text": "abcde",
-			"author": {
-				"id": "4",
-				"name": "Author 4",
-				"friends": null
-			}
-		}
-	}
-}
-```
-
-Debug sql: 
-
-(from printStatementInfo() call in `internal/db/db_query_executor.go` )
-```sql
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE `Post`.`ID` = 1;
-```
-
-### get all posts
-
-query:
-```gql
-query {
-  getPosts (filter: null, order: { field: characters, order: ASC}) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
-				name
-			}
-		}
-	}
-}
-```
-
-response:
-```json
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			},
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			},
-			{
-				"id": "2",
-				"title": "Post 2",
-				"characters": 15,
-				"score": 3.5,
-				"completed": false,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			},
-			{
-				"id": "5",
-				"title": "Post 5",
-				"characters": 55,
-				"score": 3.2,
-				"completed": true,
-				"author": {
-					"name": "Author 1",
-					"friends": null
-				}
-			},
-			{
-				"id": "3",
-				"title": "Post 3",
-				"characters": 100,
-				"score": 4.2,
-				"completed": true,
-				"author": {
-					"name": "Author 2",
-					"friends": null
-				}
-			},
-			{
-				"id": "8",
-				"title": "Post 8",
-				"characters": 450,
-				"score": 4,
-				"completed": true,
-				"author": {
-					"name": "Author 1",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-```
-
-Debug sql: 
-```sql
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-ORDER BY `Post`.characters ASC;
-```
-
 ### get posts filtered by number of characters
 
-query:
-```gql
-query GetPostsCharactersEquals{
-  getPosts (
-		filter: { 
-			characters : {equals: 55}
-		}
-	) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
+	query:
+	```gql
+	query GetPostsCharactersEquals{
+	getPosts (
+			filter: { 
+				characters : {equals: 55}
+			}
+		) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
 				name
+				friends {
+					name
+				}
 			}
 		}
 	}
-}
 
 
-query GetPostsCharactersGTE{
-  getPosts (
-		filter: { 
-			characters : {lt: 55}
-		}
-	) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
+	query GetPostsCharactersGTE{
+	getPosts (
+			filter: { 
+				characters : {lt: 55}
+			}
+		) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
 				name
+				friends {
+					name
+				}
 			}
 		}
 	}
-}
 
-query GetPostsCharactersGT{
-  getPosts (
-		filter: { 
-			characters : {gt: 55}
-		}
-	) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
+	query GetPostsCharactersGT{
+	getPosts (
+			filter: { 
+				characters : {gt: 55}
+			}
+		) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
 				name
+				friends {
+					name
+				}
 			}
 		}
 	}
-}
 
-query GetPostsCharactersLTE{
-  getPosts (
-		filter: { 
-			characters : {lte: 55}
-		}
-	) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
+	query GetPostsCharactersLTE{
+	getPosts (
+			filter: { 
+				characters : {lte: 55}
+			}
+		) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
 				name
+				friends {
+					name
+				}
 			}
 		}
 	}
-}
 
-query GetPostsCharactersLT{
-  getPosts (
-		filter: { 
-			characters : {lt: 55}
-		}
-	) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
+	query GetPostsCharactersLT{
+	getPosts (
+			filter: { 
+				characters : {lt: 55}
+			}
+		) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
 				name
+				friends {
+					name
+				}
 			}
 		}
 	}
-}
-```
+	```
 
-response:
-```json
-//GetPostsCharactersEquals
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "5",
-				"title": "Post 5",
-				"characters": 55,
-				"score": 3.2,
-				"completed": true,
-				"author": {
-					"name": "Author 1",
-					"friends": null
+	response:
+	```json
+	//GetPostsCharactersEquals
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "5",
+					"title": "Post 5",
+					"characters": 55,
+					"score": 3.2,
+					"completed": true,
+					"author": {
+						"name": "Author 1",
+						"friends": null
+					}
 				}
-			}
-		]
-	}
-}
-
-//GetPostsCharactersGTE
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			},
-			{
-				"id": "2",
-				"title": "Post 2",
-				"characters": 15,
-				"score": 3.5,
-				"completed": false,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			},
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-
-//GetPostsCharactersGT
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "3",
-				"title": "Post 3",
-				"characters": 100,
-				"score": 4.2,
-				"completed": true,
-				"author": {
-					"name": "Author 2",
-					"friends": null
-				}
-			},
-			{
-				"id": "8",
-				"title": "Post 8",
-				"characters": 450,
-				"score": 4,
-				"completed": true,
-				"author": {
-					"name": "Author 1",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-
-//GetPostsCharactersGTE
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			},
-			{
-				"id": "2",
-				"title": "Post 2",
-				"characters": 15,
-				"score": 3.5,
-				"completed": false,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			},
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-
-//GetPostsCharactersLTE
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			},
-			{
-				"id": "2",
-				"title": "Post 2",
-				"characters": 15,
-				"score": 3.5,
-				"completed": false,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			},
-			{
-				"id": "5",
-				"title": "Post 5",
-				"characters": 55,
-				"score": 3.2,
-				"completed": true,
-				"author": {
-					"name": "Author 1",
-					"friends": null
-				}
-			},
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-
-//GetPostsCharactersLT
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			},
-			{
-				"id": "2",
-				"title": "Post 2",
-				"characters": 15,
-				"score": 3.5,
-				"completed": false,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			},
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-```
-
-Debug sql: 
-```sql
--- LTE
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND (`Post`.characters <= 55);
-
-
--- LT
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND (`Post`.characters < 55);
-
--- GTE
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND (`Post`.characters >= 55);
-
--- GT
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND (`Post`.characters > 55);
-
--- EQ
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND (`Post`.characters = 55);
-```
-
-### getposts filtered by title
-
-query:
-```gql
-query GetPostsTitleContains{
-  getPosts (filter: { title : {contains: "1"}}) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
-				name
-			}
-		}
-	}
-}
-
-query GetPostsTitleEquals{
-  getPosts (filter: { title : {equals: "Post 1"}}) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
-				name
-			}
-		}
-	}
-}
-```
-
-response:
-```json
-//contains
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			},
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-
-//equal
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-
-```
-
-Debug sql: 
-```sql
----contains
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND (`Post`.title LIKE '%1%');
-
---equal
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND (`Post`.title = 'Post 1');
-```
-
-### get posts filtered by iscomplete
-
-query:
-```gql
-query  GetPostsByIsCompleteFalse{
-  getPosts (filter: { isComplete : false}) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
-				name
-			}
-		}
-	}
-}
-
-query  GetPostsByIsCompleteTrue{
-  getPosts (filter: { isComplete : true}) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
-				name
-			}
-		}
-	}
-}
-```
-
-response:
-```json
-//iscomplete = false
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "2",
-				"title": "Post 2",
-				"characters": 15,
-				"score": 3.5,
-				"completed": false,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-
-//iscomplete=true
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "5",
-				"title": "Post 5",
-				"characters": 55,
-				"score": 3.2,
-				"completed": true,
-				"author": {
-					"name": "Author 1",
-					"friends": null
-				}
-			},
-			{
-				"id": "8",
-				"title": "Post 8",
-				"characters": 450,
-				"score": 4,
-				"completed": true,
-				"author": {
-					"name": "Author 1",
-					"friends": null
-				}
-			},
-			{
-				"id": "3",
-				"title": "Post 3",
-				"characters": 100,
-				"score": 4.2,
-				"completed": true,
-				"author": {
-					"name": "Author 2",
-					"friends": null
-				}
-			},
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			},
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-```
-
-Debug sql: 
-```sql
---iscomplete=false
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND `Post`.completed IS FALSE;
-
---iscomplete=true
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND `Post`.completed IS TRUE;
-
-```
-
-### get posts filtered by not
-
-query:
-```gql
-query GetPostsNot{
-  getPosts (filter: { not : {characters: {gte :50}}}) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
-				name
-			}
-		}
-	}
-}
-```
-
-response:
-```json
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			},
-			{
-				"id": "2",
-				"title": "Post 2",
-				"characters": 15,
-				"score": 3.5,
-				"completed": false,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			},
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-```
-
-Debug sql: 
-```sql
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND (TRUE AND (`Post`.characters >= 50)) IS FALSE;
-```
-
-### get posts filtered by and
-
-query:
-```gql
-query {
-  getPosts (
-		filter: {
-			and: [
-			 	{ title: {contains: "1"}},
-				{ characters : {lt: 55}}
-				
 			]
-		},
-		order: { field: title, order: ASC}
-	
-	) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
-				name
-			}
 		}
 	}
-}
-```
 
-response:
-```json
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
+	//GetPostsCharactersGTE
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				},
+				{
+					"id": "2",
+					"title": "Post 2",
+					"characters": 15,
+					"score": 3.5,
+					"completed": false,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				},
+				{
+					"id": "10",
+					"title": "Post 10",
+					"characters": 2,
+					"score": 2,
+					"completed": true,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
 				}
-			},
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			}
-		]
-	}
-}
-```
-
-Debug sql: 
-```sql
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND ((TRUE AND (TRUE AND (`Post`.title LIKE '%1%'))) AND (TRUE AND (`Post`.characters < 55)))
-ORDER BY `Post`.title ASC;
-```
-
-### get posts filtered by or
-
-query:
-```gql
-query {
-  getPosts (
-		filter: {
-			or: [
-			 	{ title: {contains: "11"}},
-				{ characters : {lt: 55}}
-				
 			]
-		},
-		order: { field: title, order: ASC}
-	
-	) {
-		id
-		title
-		characters
-		score
-		completed
-		author {
-			name
-			friends {
+		}
+	}
+
+	//GetPostsCharactersGT
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "3",
+					"title": "Post 3",
+					"characters": 100,
+					"score": 4.2,
+					"completed": true,
+					"author": {
+						"name": "Author 2",
+						"friends": null
+					}
+				},
+				{
+					"id": "8",
+					"title": "Post 8",
+					"characters": 450,
+					"score": 4,
+					"completed": true,
+					"author": {
+						"name": "Author 1",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
+
+	//GetPostsCharactersGTE
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				},
+				{
+					"id": "2",
+					"title": "Post 2",
+					"characters": 15,
+					"score": 3.5,
+					"completed": false,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				},
+				{
+					"id": "10",
+					"title": "Post 10",
+					"characters": 2,
+					"score": 2,
+					"completed": true,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
+
+	//GetPostsCharactersLTE
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				},
+				{
+					"id": "2",
+					"title": "Post 2",
+					"characters": 15,
+					"score": 3.5,
+					"completed": false,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				},
+				{
+					"id": "5",
+					"title": "Post 5",
+					"characters": 55,
+					"score": 3.2,
+					"completed": true,
+					"author": {
+						"name": "Author 1",
+						"friends": null
+					}
+				},
+				{
+					"id": "10",
+					"title": "Post 10",
+					"characters": 2,
+					"score": 2,
+					"completed": true,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
+
+	//GetPostsCharactersLT
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				},
+				{
+					"id": "2",
+					"title": "Post 2",
+					"characters": 15,
+					"score": 3.5,
+					"completed": false,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				},
+				{
+					"id": "10",
+					"title": "Post 10",
+					"characters": 2,
+					"score": 2,
+					"completed": true,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
+	```
+
+	Debug sql: 
+	```sql
+	-- LTE
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND (`Post`.characters <= 55);
+
+
+	-- LT
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND (`Post`.characters < 55);
+
+	-- GTE
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND (`Post`.characters >= 55);
+
+	-- GT
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND (`Post`.characters > 55);
+
+	-- EQ
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND (`Post`.characters = 55);
+	```
+
+	### getposts filtered by title
+
+	query:
+	```gql
+	query GetPostsTitleContains{
+	getPosts (filter: { title : {contains: "1"}}) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
 				name
+				friends {
+					name
+				}
 			}
 		}
 	}
-}
-```
 
-response:
-```json
-{
-	"data": {
-		"getPosts": [
-			{
-				"id": "1",
-				"title": "Post 1",
-				"characters": 5,
-				"score": 4.5,
-				"completed": true,
-				"author": {
-					"name": "Author 4",
-					"friends": null
-				}
-			},
-			{
-				"id": "10",
-				"title": "Post 10",
-				"characters": 2,
-				"score": 2,
-				"completed": true,
-				"author": {
-					"name": "Author 8",
-					"friends": null
-				}
-			},
-			{
-				"id": "2",
-				"title": "Post 2",
-				"characters": 15,
-				"score": 3.5,
-				"completed": false,
-				"author": {
-					"name": "Author 8",
-					"friends": null
+	query GetPostsTitleEquals{
+	getPosts (filter: { title : {equals: "Post 1"}}) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
+				name
+				friends {
+					name
 				}
 			}
-		]
+		}
 	}
-}
-```
+	```
 
-Debug sql: 
-```sql
-SELECT `Post`.`ID` AS "Post.ID",
-     `Post`.title AS "Post.title",
-     `Post`.characters AS "Post.characters",
-     `Post`.completed AS "Post.completed",
-     `Post`.`datePublished` AS "Post.datePublished",
-     `Post`.score AS "Post.score",
-     `Post`.text AS "Post.text",
-     `Author`.`ID` AS "Author.ID",
-     `Author`.name AS "Author.name"
-FROM posts.`Post`
-     INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
-     INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
-WHERE TRUE AND ((FALSE OR (TRUE AND (`Post`.title LIKE '%11%'))) OR (TRUE AND (`Post`.characters < 55)))
-ORDER BY `Post`.title ASC;
-```
+	response:
+	```json
+	//contains
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				},
+				{
+					"id": "10",
+					"title": "Post 10",
+					"characters": 2,
+					"score": 2,
+					"completed": true,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
 
-#### go-jet resources
+	//equal
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
 
-[jet wiki](https://github.com/go-jet/jet/wiki)
+	```
 
-[jet select](https://github.com/go-jet/jet/wiki/SELECT)
+	Debug sql: 
+	```sql
+	---contains
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND (`Post`.title LIKE '%1%');
 
-[jet expressions](https://github.com/go-jet/jet/wiki/Expressions)
+	--equal
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND (`Post`.title = 'Post 1');
+	```
 
-[dynamic query generation](https://github.com/go-jet/jet/wiki/FAQ#how-to-construct-dynamic-condition)
+	### get posts filtered by iscomplete
+
+	query:
+	```gql
+	query  GetPostsByIsCompleteFalse{
+	getPosts (filter: { isComplete : false}) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
+				name
+				friends {
+					name
+				}
+			}
+		}
+	}
+
+	query  GetPostsByIsCompleteTrue{
+	getPosts (filter: { isComplete : true}) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
+				name
+				friends {
+					name
+				}
+			}
+		}
+	}
+	```
+
+	response:
+	```json
+	//iscomplete = false
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "2",
+					"title": "Post 2",
+					"characters": 15,
+					"score": 3.5,
+					"completed": false,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
+
+	//iscomplete=true
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "5",
+					"title": "Post 5",
+					"characters": 55,
+					"score": 3.2,
+					"completed": true,
+					"author": {
+						"name": "Author 1",
+						"friends": null
+					}
+				},
+				{
+					"id": "8",
+					"title": "Post 8",
+					"characters": 450,
+					"score": 4,
+					"completed": true,
+					"author": {
+						"name": "Author 1",
+						"friends": null
+					}
+				},
+				{
+					"id": "3",
+					"title": "Post 3",
+					"characters": 100,
+					"score": 4.2,
+					"completed": true,
+					"author": {
+						"name": "Author 2",
+						"friends": null
+					}
+				},
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				},
+				{
+					"id": "10",
+					"title": "Post 10",
+					"characters": 2,
+					"score": 2,
+					"completed": true,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
+	```
+
+	Debug sql: 
+	```sql
+	--iscomplete=false
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND `Post`.completed IS FALSE;
+
+	--iscomplete=true
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND `Post`.completed IS TRUE;
+
+	```
+
+	### get posts filtered by not
+
+	query:
+	```gql
+	query GetPostsNot{
+	getPosts (filter: { not : {characters: {gte :50}}}) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
+				name
+				friends {
+					name
+				}
+			}
+		}
+	}
+	```
+
+	response:
+	```json
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				},
+				{
+					"id": "2",
+					"title": "Post 2",
+					"characters": 15,
+					"score": 3.5,
+					"completed": false,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				},
+				{
+					"id": "10",
+					"title": "Post 10",
+					"characters": 2,
+					"score": 2,
+					"completed": true,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
+	```
+
+	Debug sql: 
+	```sql
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND (TRUE AND (`Post`.characters >= 50)) IS FALSE;
+	```
+
+	### get posts filtered by and
+
+	query:
+	```gql
+	query {
+	getPosts (
+			filter: {
+				and: [
+					{ title: {contains: "1"}},
+					{ characters : {lt: 55}}
+					
+				]
+			},
+			order: { field: title, order: ASC}
+		
+		) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
+				name
+				friends {
+					name
+				}
+			}
+		}
+	}
+	```
+
+	response:
+	```json
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				},
+				{
+					"id": "10",
+					"title": "Post 10",
+					"characters": 2,
+					"score": 2,
+					"completed": true,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
+	```
+
+	Debug sql: 
+	```sql
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND ((TRUE AND (TRUE AND (`Post`.title LIKE '%1%'))) AND (TRUE AND (`Post`.characters < 55)))
+	ORDER BY `Post`.title ASC;
+	```
+
+	### get posts filtered by or
+
+	query:
+	```gql
+	query {
+	getPosts (
+			filter: {
+				or: [
+					{ title: {contains: "11"}},
+					{ characters : {lt: 55}}
+					
+				]
+			},
+			order: { field: title, order: ASC}
+		
+		) {
+			id
+			title
+			characters
+			score
+			completed
+			authors {
+				name
+				friends {
+					name
+				}
+			}
+		}
+	}
+	```
+
+	response:
+	```json
+	{
+		"data": {
+			"getPosts": [
+				{
+					"id": "1",
+					"title": "Post 1",
+					"characters": 5,
+					"score": 4.5,
+					"completed": true,
+					"author": {
+						"name": "Author 4",
+						"friends": null
+					}
+				},
+				{
+					"id": "10",
+					"title": "Post 10",
+					"characters": 2,
+					"score": 2,
+					"completed": true,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				},
+				{
+					"id": "2",
+					"title": "Post 2",
+					"characters": 15,
+					"score": 3.5,
+					"completed": false,
+					"author": {
+						"name": "Author 8",
+						"friends": null
+					}
+				}
+			]
+		}
+	}
+	```
+
+	Debug sql: 
+	```sql
+	SELECT `Post`.`ID` AS "Post.ID",
+		`Post`.title AS "Post.title",
+		`Post`.characters AS "Post.characters",
+		`Post`.completed AS "Post.completed",
+		`Post`.`datePublished` AS "Post.datePublished",
+		`Post`.score AS "Post.score",
+		`Post`.text AS "Post.text",
+		`Author`.`ID` AS "Author.ID",
+		`Author`.name AS "Author.name"
+	FROM posts.`Post`
+		INNER JOIN posts.`Author_Post` ON (`Post`.`ID` = `Author_Post`.post_id)
+		INNER JOIN posts.`Author` ON (`Author`.`ID` = `Author_Post`.author_id)
+	WHERE TRUE AND ((FALSE OR (TRUE AND (`Post`.title LIKE '%11%'))) OR (TRUE AND (`Post`.characters < 55)))
+	ORDER BY `Post`.title ASC;
+	```
+
+	#### go-jet resources
+
+	[jet wiki](https://github.com/go-jet/jet/wiki)
+
+	[jet select](https://github.com/go-jet/jet/wiki/SELECT)
+
+	[jet expressions](https://github.com/go-jet/jet/wiki/Expressions)
+
+	[dynamic query generation](https://github.com/go-jet/jet/wiki/FAQ#how-to-construct-dynamic-condition)
+
+	### Get friends of an author
+
+	orginal table:
+	+-----------+------------------+
+	| author_id | friend_author_id |
+	+-----------+------------------+
+	|         4 |                1 |
+	|        10 |                1 |
+	|         1 |                2 |
+	|         1 |                3 |
+	|        10 |                3 |
+	|         3 |                4 |
+	|         4 |                5 |
+	|         5 |                6 |
+	|         5 |                7 |
+	|         6 |                7 |
+	|         7 |                8 |
+	|         8 |                9 |
+	|         9 |               10 |
+	+-----------+------------------+
 
 
 
+	```sql
+	--all authors in author_id in Author_Friend_Author. UNION all authors in friend_author_id in Author_Friend_Author
+	SELECT author.ID as author_ID, author.name  as name, friends.friend_author_id as friend_id
+	FROM Author author
+	INNER JOIN Author_Friend_Author friends ON author.ID = friends.author_id
+	UNION 
+	SELECT friends.friend_author_id  as author_id,  author.name  as name, friends.author_id as friend_id
+	FROM Author_Friend_Author friends
+	INNER JOIN Author author ON author.ID = friends.friend_author_id 
+	```
 
+	```sql
+	+-----------+-----------+-----------+
+	| author_ID | name      | friend_id |
+	+-----------+-----------+-----------+
+	|         1 | Author 1  |         2 |
+	|         1 | Author 1  |         3 |
+	|         3 | Author 3  |         4 |
+	|         4 | Author 4  |         1 |
+	|         4 | Author 4  |         5 |
+	|         5 | Author 5  |         6 |
+	|         5 | Author 5  |         7 |
+	|         6 | Author 6  |         7 |
+	|         7 | Author 7  |         8 |
+	|         8 | Author 8  |         9 |
+	|         9 | Author 9  |        10 |
+	|        10 | Author 10 |         1 |
+	|        10 | Author 10 |         3 |
+	|         1 | Author 1  |         4 |
+	|         1 | Author 1  |        10 |
+	|         2 | Author 2  |         1 |
+	|         3 | Author 3  |         1 |
+	|         3 | Author 3  |        10 |
+	|         4 | Author 4  |         3 |
+	|         5 | Author 5  |         4 |
+	|         6 | Author 6  |         5 |
+	|         7 | Author 7  |         5 |
+	|         7 | Author 7  |         6 |
+	|         8 | Author 8  |         7 |
+	|         9 | Author 9  |         8 |
+	|        10 | Author 10 |         9 |
+	+-----------+-----------+-----------+
+	26 rows in set (0.04 sec)
+	```
+
+
+	https://github.com/go-jet/jet/wiki/FAQ

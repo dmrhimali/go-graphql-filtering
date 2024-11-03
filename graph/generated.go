@@ -54,7 +54,7 @@ type ComplexityRoot struct {
 	}
 
 	Post struct {
-		Author        func(childComplexity int) int
+		Authors       func(childComplexity int) int
 		Characters    func(childComplexity int) int
 		Completed     func(childComplexity int) int
 		DatePublished func(childComplexity int) int
@@ -130,12 +130,12 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Author.Posts(childComplexity), true
 
-	case "Post.author":
-		if e.complexity.Post.Author == nil {
+	case "Post.authors":
+		if e.complexity.Post.Authors == nil {
 			break
 		}
 
-		return e.complexity.Post.Author(childComplexity), true
+		return e.complexity.Post.Authors(childComplexity), true
 
 	case "Post.characters":
 		if e.complexity.Post.Characters == nil {
@@ -658,8 +658,8 @@ func (ec *executionContext) fieldContext_Author_posts(_ context.Context, field g
 				return ec.fieldContext_Post_completed(ctx, field)
 			case "datePublished":
 				return ec.fieldContext_Post_datePublished(ctx, field)
-			case "author":
-				return ec.fieldContext_Post_author(ctx, field)
+			case "authors":
+				return ec.fieldContext_Post_authors(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Post", field.Name)
 		},
@@ -1017,8 +1017,8 @@ func (ec *executionContext) fieldContext_Post_datePublished(_ context.Context, f
 	return fc, nil
 }
 
-func (ec *executionContext) _Post_author(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Post_author(ctx, field)
+func (ec *executionContext) _Post_authors(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Post_authors(ctx, field)
 	if err != nil {
 		return graphql.Null
 	}
@@ -1031,24 +1031,21 @@ func (ec *executionContext) _Post_author(ctx context.Context, field graphql.Coll
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return obj.Author, nil
+		return obj.Authors, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
 		return graphql.Null
 	}
 	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
 		return graphql.Null
 	}
-	res := resTmp.(*model.Author)
+	res := resTmp.([]*model.Author)
 	fc.Result = res
-	return ec.marshalNAuthor2ᚖgithubᚗcomᚋdmrhimaliᚋgoᚑgraphqlᚑfilteringᚋgraphᚋmodelᚐAuthor(ctx, field.Selections, res)
+	return ec.marshalOAuthor2ᚕᚖgithubᚗcomᚋdmrhimaliᚋgoᚑgraphqlᚑfilteringᚋgraphᚋmodelᚐAuthorᚄ(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) fieldContext_Post_author(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Post_authors(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Post",
 		Field:      field,
@@ -1121,8 +1118,8 @@ func (ec *executionContext) fieldContext_PostAggregateResult_posts(_ context.Con
 				return ec.fieldContext_Post_completed(ctx, field)
 			case "datePublished":
 				return ec.fieldContext_Post_datePublished(ctx, field)
-			case "author":
-				return ec.fieldContext_Post_author(ctx, field)
+			case "authors":
+				return ec.fieldContext_Post_authors(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Post", field.Name)
 		},
@@ -1262,8 +1259,8 @@ func (ec *executionContext) fieldContext_Query_getPost(ctx context.Context, fiel
 				return ec.fieldContext_Post_completed(ctx, field)
 			case "datePublished":
 				return ec.fieldContext_Post_datePublished(ctx, field)
-			case "author":
-				return ec.fieldContext_Post_author(ctx, field)
+			case "authors":
+				return ec.fieldContext_Post_authors(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Post", field.Name)
 		},
@@ -1332,8 +1329,8 @@ func (ec *executionContext) fieldContext_Query_getPosts(ctx context.Context, fie
 				return ec.fieldContext_Post_completed(ctx, field)
 			case "datePublished":
 				return ec.fieldContext_Post_datePublished(ctx, field)
-			case "author":
-				return ec.fieldContext_Post_author(ctx, field)
+			case "authors":
+				return ec.fieldContext_Post_authors(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Post", field.Name)
 		},
@@ -3596,11 +3593,8 @@ func (ec *executionContext) _Post(ctx context.Context, sel ast.SelectionSet, obj
 			}
 		case "datePublished":
 			out.Values[i] = ec._Post_datePublished(ctx, field, obj)
-		case "author":
-			out.Values[i] = ec._Post_author(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
+		case "authors":
+			out.Values[i] = ec._Post_authors(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -4472,6 +4466,53 @@ func (ec *executionContext) marshalOAuthor2ᚕᚖgithubᚗcomᚋdmrhimaliᚋgo�
 
 	}
 	wg.Wait()
+
+	return ret
+}
+
+func (ec *executionContext) marshalOAuthor2ᚕᚖgithubᚗcomᚋdmrhimaliᚋgoᚑgraphqlᚑfilteringᚋgraphᚋmodelᚐAuthorᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Author) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNAuthor2ᚖgithubᚗcomᚋdmrhimaliᚋgoᚑgraphqlᚑfilteringᚋgraphᚋmodelᚐAuthor(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
 
 	return ret
 }

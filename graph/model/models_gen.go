@@ -24,14 +24,14 @@ type IntFilter struct {
 }
 
 type Post struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	Characters    int      `json:"characters"`
-	Text          *string  `json:"text,omitempty"`
-	Score         *float64 `json:"score,omitempty"`
-	Completed     bool     `json:"completed"`
-	DatePublished *string  `json:"datePublished,omitempty"`
-	Author        *Author  `json:"author"`
+	ID            string    `json:"id"`
+	Title         string    `json:"title"`
+	Characters    int       `json:"characters"`
+	Text          *string   `json:"text,omitempty"`
+	Score         *float64  `json:"score,omitempty"`
+	Completed     bool      `json:"completed"`
+	DatePublished *string   `json:"datePublished,omitempty"`
+	Authors       []*Author `json:"authors,omitempty"`
 }
 
 type PostAggregateResult struct {

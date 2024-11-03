@@ -1,6 +1,6 @@
 include .env
 
-#call make create_migration insert_table_post
+#call: make create_migration ARG=create_author_friend_author_table
 create_migration:
 	~/go/bin/migrate	create	 -dir internal/db/migrations	-ext sql	-seq $(ARG)
 

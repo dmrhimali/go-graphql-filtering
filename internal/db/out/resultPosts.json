@@ -1,5 +1,36 @@
 [
 	{
+		"ID": 10,
+		"Title": "Post 10",
+		"Characters": 2,
+		"Text": "ddddd",
+		"Score": 2,
+		"Completed": true,
+		"DatePublished": "2013-12-31T00:00:00Z",
+		"Authors": [
+			{
+				"ID": 10,
+				"Name": "Author 10",
+				"Friends": [
+					{
+						"ID": 10,
+						"Name": "Author 10"
+					}
+				]
+			},
+			{
+				"ID": 8,
+				"Name": "Author 8",
+				"Friends": [
+					{
+						"ID": 8,
+						"Name": "Author 8"
+					}
+				]
+			}
+		]
+	},
+	{
 		"ID": 1,
 		"Title": "Post 1",
 		"Characters": 5,
@@ -10,30 +41,23 @@
 		"Authors": [
 			{
 				"ID": 4,
-				"Name": "Author 4"
+				"Name": "Author 4",
+				"Friends": [
+					{
+						"ID": 4,
+						"Name": "Author 4"
+					}
+				]
 			},
 			{
 				"ID": 9,
-				"Name": "Author 9"
-			}
-		]
-	},
-	{
-		"ID": 10,
-		"Title": "Post 10",
-		"Characters": 2,
-		"Text": "ddddd",
-		"Score": 2,
-		"Completed": true,
-		"DatePublished": "2013-12-31T00:00:00Z",
-		"Authors": [
-			{
-				"ID": 8,
-				"Name": "Author 8"
-			},
-			{
-				"ID": 10,
-				"Name": "Author 10"
+				"Name": "Author 9",
+				"Friends": [
+					{
+						"ID": 9,
+						"Name": "Author 9"
+					}
+				]
 			}
 		]
 	},
@@ -48,7 +72,126 @@
 		"Authors": [
 			{
 				"ID": 8,
-				"Name": "Author 8"
+				"Name": "Author 8",
+				"Friends": [
+					{
+						"ID": 8,
+						"Name": "Author 8"
+					}
+				]
+			}
+		]
+	},
+	{
+		"ID": 5,
+		"Title": "Post 5",
+		"Characters": 55,
+		"Text": "ddddd",
+		"Score": 3.2,
+		"Completed": true,
+		"DatePublished": "2010-12-31T00:00:00Z",
+		"Authors": [
+			{
+				"ID": 1,
+				"Name": "Author 1",
+				"Friends": [
+					{
+						"ID": 1,
+						"Name": "Author 1"
+					}
+				]
+			},
+			{
+				"ID": 4,
+				"Name": "Author 4",
+				"Friends": [
+					{
+						"ID": 4,
+						"Name": "Author 4"
+					}
+				]
+			},
+			{
+				"ID": 9,
+				"Name": "Author 9",
+				"Friends": [
+					{
+						"ID": 9,
+						"Name": "Author 9"
+					}
+				]
+			}
+		]
+	},
+	{
+		"ID": 3,
+		"Title": "Post 3",
+		"Characters": 100,
+		"Text": "lmnop",
+		"Score": 4.2,
+		"Completed": true,
+		"DatePublished": "2020-12-31T00:00:00Z",
+		"Authors": [
+			{
+				"ID": 2,
+				"Name": "Author 2",
+				"Friends": [
+					{
+						"ID": 2,
+						"Name": "Author 2"
+					}
+				]
+			},
+			{
+				"ID": 3,
+				"Name": "Author 3",
+				"Friends": [
+					{
+						"ID": 3,
+						"Name": "Author 3"
+					}
+				]
+			}
+		]
+	},
+	{
+		"ID": 8,
+		"Title": "Post 8",
+		"Characters": 450,
+		"Text": "ddddd",
+		"Score": 4,
+		"Completed": true,
+		"DatePublished": "2011-12-31T00:00:00Z",
+		"Authors": [
+			{
+				"ID": 1,
+				"Name": "Author 1",
+				"Friends": [
+					{
+						"ID": 1,
+						"Name": "Author 1"
+					}
+				]
+			},
+			{
+				"ID": 6,
+				"Name": "Author 6",
+				"Friends": [
+					{
+						"ID": 6,
+						"Name": "Author 6"
+					}
+				]
+			},
+			{
+				"ID": 7,
+				"Name": "Author 7",
+				"Friends": [
+					{
+						"ID": 7,
+						"Name": "Author 7"
+					}
+				]
 			}
 		]
 	}

@@ -11,6 +11,7 @@ package table
 // this method only once at the beginning of the program.
 func UseSchema(schema string) {
 	Author = Author.FromSchema(schema)
+	AuthorFriendAuthor = AuthorFriendAuthor.FromSchema(schema)
 	AuthorPost = AuthorPost.FromSchema(schema)
 	Post = Post.FromSchema(schema)
 	SchemaMigrations = SchemaMigrations.FromSchema(schema)

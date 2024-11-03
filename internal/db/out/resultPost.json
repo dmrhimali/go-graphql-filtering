@@ -9,11 +9,23 @@
 	"Authors": [
 		{
 			"ID": 4,
-			"Name": "Author 4"
+			"Name": "Author 4",
+			"Friends": [
+				{
+					"ID": 4,
+					"Name": "Author 4"
+				}
+			]
 		},
 		{
 			"ID": 9,
-			"Name": "Author 9"
+			"Name": "Author 9",
+			"Friends": [
+				{
+					"ID": 9,
+					"Name": "Author 9"
+				}
+			]
 		}
 	]
 }
