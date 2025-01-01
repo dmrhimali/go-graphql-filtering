@@ -1,8 +1,92 @@
 # Filtering  and Sorting
+This application will use go and graphql to create an api that query a mysql databsse. The graphql api endpoints will support filtering functionality. Jet library is used for dynamic sql query gneration.
 
+
+graohql schema:
+```gql
+scalar Date
+type Post {
+    id: ID!
+    title: String! 
+    commentCount : Int @deprecated(reason: "No longer supported")
+    characters: Int!
+    text: String
+    score: Float 
+    completed: Boolean!
+    datePublished: Date
+    author: Author!
+}
+
+type Author {
+    id: ID!
+    name: String! 
+    posts: [Post!]
+    friends: [Author]
+}
+
+input StringFilter {
+  equals: String
+  contains: String
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  lt: Int
+  lte: Int
+}
+
+input PostFilter {
+  title: StringFilter
+  characters: IntFilter
+  isComplete: Boolean
+
+  and: [PostFilter!]
+  or: [PostFilter!]
+  not: PostFilter
+}
+
+type PostAggregateResult {
+  posts: [Post!]
+  count: String
+  avgScore: Float
+}
+
+enum SortableField {
+  title
+  characters
+  datePublished
+}
+
+enum SortOrder {
+  ASC
+  DESC
+}
+
+
+input PostOrder {
+  field: SortableField
+  order: SortOrder = ASC
+}
+
+type Query {
+  getPost(postID: ID!): Post
+  getPosts(filter: PostFilter, order: PostOrder): [Post!]
+  aggregatePost(filter: PostFilter): PostAggregateResult
+}
+
+
+
+```
+
+
+Rferences:
 https://dgraph.io/docs/graphql/queries/queries-overview/
+
 https://www.youtube.com/watch?v=dDxUu-K2qdE
 
+## initalize project
 run 
 ```sh
 mkdir go-graphql-filtering
@@ -2647,5 +2731,293 @@ ORDER BY `Post`.title ASC;
 [dynamic query generation](https://github.com/go-jet/jet/wiki/FAQ#how-to-construct-dynamic-condition)
 
 
+## Graphql Directives
+https://developer.ibm.com/articles/awb-graphql-directives-overview/
+
+### Built-in graphql directives
+The following list has all the built-in directives that are defined by the GraphQL specification:
+
+- `@skip`: This directive can be used to exclude fields from a query operation conditionally.
+- `@include`: Does the opposite of @skip and can be used to include fields in a query operation conditionally.
+- `@deprecated`: This directive can mark a field or an enum value as deprecated and can provide a reason for deprecation to the client.
+- `@specifiedBy`: This directive can be used to provide a URL for the specification of a custom scalar.
+
+As GraphQL evolves, new execution capabilities might be introduced and exposed through directives. For example, the directives@defer and @stream have been announced by the GraphQL Working Group but aren't listed in the latest draft of the GraphQL specification.
+
+GraphQL services and tools can also provide custom directives beyond those already mentioned.- z
+
+### Custom GraphQL directives
+Custom directives can be used to extend the functionality of GraphQL and are the preferred way to add custom behavior to a GraphQL API. Different GraphQL server and client implementations are already using custom directives to add additional functionality to GraphQL.
+
+For example, with GraphQL APIs built with API Connect Essentials, custom directives are defined to connect with your data sources, such as the @rest, @dbquery, and @graphql directives. When using API Connect Essentials to develop your GraphQL API, you can use these directives to connect to REST APIs, databases, and other GraphQL APIs. Additionally, we have defined the @materializer and @sequence directives to mix and match data from multiple data sources in a single type.
+
+### Directives that apply to the type system
+Directives that apply to the type system are used to annotate a schema, object type, or field definition written in GraphQL SDL (schema definition language) when building a GraphQL server. Both built-in and custom directives can be used in type system directive locations, and GraphQL server implementations can then use these annotations to take additional actions. Therefore, type system directive locations are also called "schema directives" as they only exist on the GraphQL schema itself.
+
+The following locations in a GraphQL schema are valid type system directive locations:
+
+- SCHEMA
+- SCALAR
+- OBJECT
+- FIELD_DEFINITION
+- ARGUMENT_DEFINITION
+- INTERFACE
+- UNION
+- ENUM & ENUM_VALUE
+- INPUT_OBJECT & INPUT_FIELD_DEFINITION
+
+`Examples` of directives that apply to the type system include `@deprecated`, a built-in directive that can `mark a field as deprecated`. Let's see what it looks like in a schema:
+
+```gql
+type User {
+  id: ID!
+  name: String! @deprecated(reason: "Use the firstName and lastName field instead")
+  firstName: String!
+  lastName: String!
+  email: String!
+}
+```
+
+In the example above, the @deprecated directive marks the name field as deprecated. The reason argument provides a reason for deprecation available to services that introspect the schema. The client could then, for example, warn the user that the field name is deprecated and shouldn't be used anymore.
+
+Another example of a directive that can be applied to the type system is` @rest`, a custom directive only available in API Connect Essentials implementations. The `data for the User type in the example above is fetched from a REST API using the @rest directive`, which is defined in the following way on a query field in a GraphQL schema:
+
+```gql
+type User {
+  id: ID!
+  name: String!
+  email: String!
+}
+
+type Query {
+  user(id: ID!): User
+    @rest(url: "https://jsonplaceholder.typicode.com/users/$id")
+}
+```
 
 
+When you run an operation that includes the user field, the API Connect Essentials GraphQL API fetches the data from the REST API and returns it to the client. The @rest directive is applied to a type system location because it annotates the user field in the schema. It lets you declaratively define how the data for the user field should be fetched, rather than having to write a resolver function, as you might expect from other GraphQL server implementations.
+
+
+### Directives that apply to execution
+`You can use directives that apply to execution to modify the behavior of an operation, field, or fragment in runtime execution`. For example, directives that apply to execution can `include or exclude fields` or `perform additional data processing` before the response is returned.
+
+Executable directive locations in GraphQL are:
+
+- QUERY
+- MUTATION
+- SUBSCRIPTION
+- FIELD
+- FRAGMENT_DEFINITION & FRAGMENT_SPREAD
+- INLINE_FRAGMENT
+- VARIABLE_DEFINITION
+
+Similar to directives that apply to the type system directives, both built-in and custom directives can be applied to executable locations. `Most built-in directives are executable, such as @skip and @include`, which you can use to include or exclude fields in an operation conditionally.
+
+Let's see what the @include directive looks like in a query operation:
+
+```gql
+query me($showName: Boolean!) {
+  me {
+    id
+    firstName @include(if: $showName)
+    lastName @include(if: $showName)
+    email
+  }
+}
+```
+
+`The @include directive conditionally includes the firstName and lastName fields in the response`. The if argument specifies a boolean value determining whether to include the field in the response. In the example above, the if argument is set to a variable $showName, which is defined in the operation variables. The variable's value can be set to true or false to include or exclude the fields in the response.
+
+
+Another example of an executable directive is`@sort`, a custom directive only available in IBM API Connect Essentials implementations.
+
+With the @sort directive, you can `sort the data returned by a field in a GraphQL operation`. You can use the @sort directive on a field that returns either a list of leaf fields or a list of objects.
+
+For example, `let's say you have a products field that returns a list of tags`. You can use the @sort directive to sort the tags by alphabetical order, even when the data source doesn't suppport this sorting order:
+
+```gql
+query {
+  products {
+    tags # ['c', 'b', 'a', null]
+  }
+}
+```
+
+The list of tags will be transformed to this when the @sort directive is used:
+```gql
+query {
+  products {
+    tags @sort # [null, 'a', 'b', 'c']
+  }
+}
+```
+
+### Declaring directives
+https://boopathi.blog/graphql-directives-an-introduction
+
+
+`If you’re using GraphQL SDL` (Schema Definition Language) to define schema, a directive declaration would look like this -
+
+```gql
+directive @foo($arg: String!) on QUERY | MUTATION
+```
+
+
+`If you’re not using the schema language`, you can declare a directive using the `GraphQLDirective constructor` -
+
+```js
+import { GraphQLDirective, DirectiveLocation } from "graphql";
+
+const fooDirective = new GraphQLDirective({
+  name: "foo",
+  args: {
+    arg: { type: GraphQLString },
+  },
+  locations: [DirectiveLocation.QUERY, DirectiveLocation.MUTATION],
+});
+```
+
+
+The declaration contains` three parts` that we can control.
+
+- The **name** of the directive. In the above example, it is @foo
+- The **arguments** of the directive and their types. In the above example, arg.
+- The **places where the directive can be used**. In the above example, QUERY | MUTATION
+
+### Directive Locations
+The **possible values of where a directive can be defined is available in the GraphQL specification** — `DirectiveLocations`. As you can see in the specification, a `directive can be defined for one of the two categories of locations — Executable and TypeSystem`.
+
+The location names in the `Executable` form are the query directives that the client can use. For example,
+```gql
+# In the server schema definitions,
+directive @auth(token: String!) on QUERY | MUTATION
+
+# and in the client,
+query ($token: String!) @auth(token: $token) {
+  ...queryFields
+}
+```
+
+The location names in the TypeSystem form are the schema directives that the schema can use. But, what use does a schema directive have? To answer this question let’s start with a problem statement for our GraphQL servers.
+
+### Executable directives locations
+These are` directives that are used in the query`. For example, the `in-built directives` (at the time of this writing) such as `@skip`, `@include`, `@stream`, `@defer` are all executable directives.
+
+The **executable directives are available for the locations listed below**. Consider @foo to be directive defined for the location mentioned in the 1st column.
+
+```gql
+directive @foo on LOCATION_IN_FIRST_COLUMN
+Directive Location	Example
+QUERY	query name @foo {}
+MUTATION	mutation name @foo {}
+SUBSCRIPTION	subscription name @foo {}
+FIELD	query { product @foo {} }
+FRAGMENT_DEFINITION	fragment x on Query @foo { }
+FRAGMENT_SPREAD	query { ...x @foo }
+INLINE_FRAGMENT	query { ... @foo { } }
+VARIABLE_DEFINITION	query ($id: ID @foo) { }
+```
+
+### TypeSystem directives locations
+These are **locations where the directives will be used in the schema**. The existing` in-built TypeSystem directives` in GraphQL are `@deprecated`, and `@specifiedBy`.
+
+The type system directives are available for the below listed locations. Consider @foo to be the directive declared for the possible locations.
+```gql
+directive @foo on LOCATION_IN_FIRST_COLUMN
+Directive Location	Example
+SCHEMA	schema @foo { query: Query }
+SCALAR	scalar x @foo
+OBJECT	type Product @foo { }
+FIELD_DEFINITION	type X { field: String @foo }
+ARGUMENT_DEFINITION	type X { field(arg: Int @foo): String }
+INTERFACE	interface X @foo {}
+UNION	union X @foo = A | B
+ENUM	enum X @foo { A B }
+ENUM_VALUE	enum X { A @foo B }
+INPUT_OBJECT	input X @foo { }
+INPUT_FIELD_DEFINITION	input X { field: String @foo }
+```
+
+### Metadata
+Let’s consider the following case.` You use persisted queries in your GraphQL server.` `Many teams build and persist these queries`.` Many versions of apps use different queries`. And also, the `queries could also be used in different platforms` — like web, iOS, or android.` You want to be able to associate failures to page the right team who built the query`. You want to draw metrics specific to an app version or platform. **All this meta can go into query directives while the author is writing persisting the query**.
+
+As an example,
+
+```gql
+mutation addToCart($id: ID!)
+@team(name: "cart")
+@platform(name: IOS)
+@appVersion(version: "5.15.2")
+@sli(name: "add-to-cart") {
+  addToCart(id: $id)
+}
+```
+
+
+### Validation rules
+Schema directives on input definitions are useful to `specify custom constraints on the input`. As examples,
+
+#### @maxLength
+```gql
+type Query {
+  hasTooManyCharacters(str: String! @maxLength(value: 64)): Boolean
+}
+```
+
+#### @conformsRegex
+```gql
+type Foo {
+  hasSpecialCharacter(str: String! @conformsRegex(regex: "[a-zA-Z]+")): Boolean
+}
+```
+
+#### @validate, @minLength
+```gql
+type Mutation {
+  createAccount(
+    email: String! @validate(format: EMAIL)
+    password: String! @validate(format: PASSWORD)
+    name: String! @minLength(value: 1)
+  ): CreateAccountPayload
+}
+```
+
+There can be many more use-cases of custom directives for input validation depending on your business domain. The advantage of using directives here to specify these validation rules is that these are declarative. One does not need a separate document to check what the validation of each field is. The specification of these validation rules goes 1-1 with how we express it with these directives, which is a very nice property to have in our models.
+
+### Auth
+**@auth**
+Though auth must be done in the request layer and not GraphQL layer, `it could be a useful tool for a GraphQL server that allows only one query document per request.`
+```gql
+query foo($token: String!) @auth(token: $token) {
+  user {
+    name
+  }
+}
+```
+
+**@isAuthenticated**
+When we have a unified schema that covers the entire website or web app or app, certain parts of the schema might be public data and certain other parts might be user’s data. To express which parts are private data and require customer authentication, directives provide a great way to express this in declaration.
+```gql
+type Query {
+  user: User @isAuthenticated
+}
+```
+If you have `multiple levels of auth`, you can simply specify that using the directive’s parameter.
+```gql
+type Query {
+  user: User @isAuthenticated(level: USER)
+
+  allUsers(first: Int, after: String): [User!] @isAuthenticated(level: ADMIN)
+}
+```
+
+### Marking sensitive data
+Marking certain data as sensitive so that it doesn’t end up in our monitoring platforms is an important responsibility of a server. Directives are a great way to declare such fields.
+
+I’ve written a dedicated blog post for this topic. It covers the @sensitive directive. You can read it here — [How to avoid logging sensitive data in GraphQL?](https://boopathi.blog/how-to-avoid-logging-sensitive-data-in-graphql)
+
+https://ayoakinola.medium.com/implementing-the-skipauth-directive-in-graphql-with-golang-f292ed10d9b9
+https://medium.com/@louisaldorio/adding-custom-tags-to-go-struct-with-custom-directives-and-gqlgen-plugins-c93322324c76
+
+[gqlgen directives](https://gqlgen.com/reference/directives/)

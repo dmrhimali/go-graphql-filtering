@@ -26,6 +26,7 @@ type IntFilter struct {
 type Post struct {
 	ID            string   `json:"id"`
 	Title         string   `json:"title"`
+	CommentCount  *int     `json:"commentCount,omitempty"`
 	Characters    int      `json:"characters"`
 	Text          *string  `json:"text,omitempty"`
 	Score         *float64 `json:"score,omitempty"`

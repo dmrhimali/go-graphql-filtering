@@ -56,6 +56,7 @@ type ComplexityRoot struct {
 	Post struct {
 		Author        func(childComplexity int) int
 		Characters    func(childComplexity int) int
+		CommentCount  func(childComplexity int) int
 		Completed     func(childComplexity int) int
 		DatePublished func(childComplexity int) int
 		ID            func(childComplexity int) int
@@ -143,6 +144,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Post.Characters(childComplexity), true
+
+	case "Post.commentCount":
+		if e.complexity.Post.CommentCount == nil {
+			break
+		}
+
+		return e.complexity.Post.CommentCount(childComplexity), true
 
 	case "Post.completed":
 		if e.complexity.Post.Completed == nil {
@@ -648,6 +656,8 @@ func (ec *executionContext) fieldContext_Author_posts(_ context.Context, field g
 				return ec.fieldContext_Post_id(ctx, field)
 			case "title":
 				return ec.fieldContext_Post_title(ctx, field)
+			case "commentCount":
+				return ec.fieldContext_Post_commentCount(ctx, field)
 			case "characters":
 				return ec.fieldContext_Post_characters(ctx, field)
 			case "text":
@@ -801,6 +811,47 @@ func (ec *executionContext) fieldContext_Post_title(_ context.Context, field gra
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Post_commentCount(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Post_commentCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CommentCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Post_commentCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Post",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
 		},
 	}
 	return fc, nil
@@ -1111,6 +1162,8 @@ func (ec *executionContext) fieldContext_PostAggregateResult_posts(_ context.Con
 				return ec.fieldContext_Post_id(ctx, field)
 			case "title":
 				return ec.fieldContext_Post_title(ctx, field)
+			case "commentCount":
+				return ec.fieldContext_Post_commentCount(ctx, field)
 			case "characters":
 				return ec.fieldContext_Post_characters(ctx, field)
 			case "text":
@@ -1252,6 +1305,8 @@ func (ec *executionContext) fieldContext_Query_getPost(ctx context.Context, fiel
 				return ec.fieldContext_Post_id(ctx, field)
 			case "title":
 				return ec.fieldContext_Post_title(ctx, field)
+			case "commentCount":
+				return ec.fieldContext_Post_commentCount(ctx, field)
 			case "characters":
 				return ec.fieldContext_Post_characters(ctx, field)
 			case "text":
@@ -1322,6 +1377,8 @@ func (ec *executionContext) fieldContext_Query_getPosts(ctx context.Context, fie
 				return ec.fieldContext_Post_id(ctx, field)
 			case "title":
 				return ec.fieldContext_Post_title(ctx, field)
+			case "commentCount":
+				return ec.fieldContext_Post_commentCount(ctx, field)
 			case "characters":
 				return ec.fieldContext_Post_characters(ctx, field)
 			case "text":
@@ -3580,6 +3637,8 @@ func (ec *executionContext) _Post(ctx context.Context, sel ast.SelectionSet, obj
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "commentCount":
+			out.Values[i] = ec._Post_commentCount(ctx, field, obj)
 		case "characters":
 			out.Values[i] = ec._Post_characters(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
