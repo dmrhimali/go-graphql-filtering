@@ -1,7 +1,93 @@
 # Filtering 
 
+This application will use go and graphql to create an api that query a mysql databsse. The graphql api endpoints will support filtering functionality. Jet library is used for dynamic sql query gneration.
+
+
+graohql schema:
+```gql
+scalar Date
+type Post {
+    id: ID!
+    title: String! 
+    commentCount : Int @deprecated(reason: "No longer supported")
+    characters: Int!
+    text: String
+    score: Float 
+    completed: Boolean!
+    datePublished: Date
+    author: Author!
+}
+
+type Author {
+    id: ID!
+    name: String! 
+    posts: [Post!]
+    friends: [Author]
+}
+
+input StringFilter {
+  equals: String
+  contains: String
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  lt: Int
+  lte: Int
+}
+
+input PostFilter {
+  title: StringFilter
+  characters: IntFilter
+  isComplete: Boolean
+
+  and: [PostFilter!]
+  or: [PostFilter!]
+  not: PostFilter
+}
+
+type PostAggregateResult {
+  posts: [Post!]
+  count: String
+  avgScore: Float
+}
+
+enum SortableField {
+  title
+  characters
+  datePublished
+}
+
+enum SortOrder {
+  ASC
+  DESC
+}
+
+
+input PostOrder {
+  field: SortableField
+  order: SortOrder = ASC
+}
+
+type Query {
+  getPost(postID: ID!): Post
+  getPosts(filter: PostFilter, order: PostOrder): [Post!]
+  aggregatePost(filter: PostFilter): PostAggregateResult
+}
+
+
+
+```
+
+
+Rferences:
 https://dgraph.io/docs/graphql/queries/queries-overview/
+
 https://www.youtube.com/watch?v=dDxUu-K2qdE
+
+## initalize project
 
 run 
 ```sh
